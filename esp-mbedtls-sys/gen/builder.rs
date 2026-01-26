@@ -207,6 +207,9 @@ impl MbedtlsBuilder {
         let lib_dir = copy_path.unwrap_or(&target_lib_dir);
         std::fs::create_dir_all(lib_dir)?;
 
+        // Apply patches to mbedtls source before CMake configuration
+        self.apply_patches()?;
+
         // Compile MbedTLS and generate libraries to link against
         log::info!("Compiling MbedTLS with accel {:?}", self.hooks);
 
@@ -264,7 +267,7 @@ impl MbedtlsBuilder {
             Hook::Sha1 => "MBEDTLS_SHA1_ALT",
             Hook::Sha256 => "MBEDTLS_SHA256_ALT",
             Hook::Sha512 => "MBEDTLS_SHA512_ALT",
-            Hook::ExpMod => "MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK",
+            Hook::ExpMod => "MBEDTLS_MPI_EXP_MOD_ALT",
         }
     }
 
@@ -275,6 +278,68 @@ impl MbedtlsBuilder {
             Hook::Sha512 => Some(300),
             _ => None,
         }
+    }
+
+    /// Applies patches from the patches directory to the mbedtls source tree.
+    ///
+    /// This is used to add guards for hooks that mbedtls upstream doesn't provide.
+    /// For example, mbedtls 3.6.5 doesn't have #if guards for MBEDTLS_MPI_EXP_MOD_ALT.
+    ///
+    /// Patches are applied idempotently - they won't be reapplied if already present.
+    fn apply_patches(&self) -> Result<()> {
+        let patches_dir = self.crate_root_path.join("patches");
+        let mbedtls_root = &self.cmake_configurer.project_path;
+
+        if !patches_dir.exists() {
+            // No patches directory, nothing to do
+            return Ok(());
+        }
+
+        log::info!("Checking for patches to apply to mbedtls");
+
+        for entry in std::fs::read_dir(&patches_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.extension().map_or(false, |ext| ext == "patch") {
+                log::info!("Checking patch: {:?}", path.file_name());
+
+                // Check if patch is already applied (test reverse application)
+                let check_result = Command::new("git")
+                    .current_dir(mbedtls_root)
+                    .args(["apply", "--check", "--reverse"])
+                    .arg(&path)
+                    .output();
+
+                if let Ok(output) = check_result {
+                    if output.status.success() {
+                        log::info!("Patch already applied, skipping: {:?}", path.file_name());
+                        continue;
+                    }
+                }
+
+                // Apply the patch
+                log::info!("Applying patch: {:?}", path.file_name());
+                let result = Command::new("git")
+                    .current_dir(mbedtls_root)
+                    .args(["apply", "--whitespace=nowarn"])
+                    .arg(&path)
+                    .output()?;
+
+                if !result.status.success() {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    return Err(anyhow!(
+                        "Failed to apply patch {:?}: {}",
+                        path.file_name(),
+                        stderr
+                    ));
+                }
+
+                log::info!("Successfully applied patch: {:?}", path.file_name());
+            }
+        }
+
+        Ok(())
     }
 
     /// A heuristics (we don't have anything better) to signal to `bindgen` whether the GCC toolchain

@@ -27258,12 +27258,3 @@ unsafe extern "C" {
     /// \return              \c 1 on failure.
     pub fn mbedtls_ctr_drbg_self_test(verbose: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
-    pub fn mbedtls_mpi_exp_mod_soft(
-        X: *mut mbedtls_mpi,
-        A: *const mbedtls_mpi,
-        E: *const mbedtls_mpi,
-        N: *const mbedtls_mpi,
-        prec_RR: *mut mbedtls_mpi,
-    ) -> ::core::ffi::c_int;
-}

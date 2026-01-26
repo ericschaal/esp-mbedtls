@@ -326,7 +326,9 @@
 //#define MBEDTLS_ECJPAKE_ALT
 //#define MBEDTLS_GCM_ALT
 //#define MBEDTLS_NIST_KW_ALT
-//#define MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK
+// MBEDTLS_MPI_EXP_MOD_ALT - Hardware acceleration for modular exponentiation
+// Uses standard ALT pattern (like SHA256_ALT) - enabled via builder.rs when exp_mod hook is active
+//#define MBEDTLS_MPI_EXP_MOD_ALT
 //#define MBEDTLS_MD5_ALT
 //#define MBEDTLS_POLY1305_ALT
 //#define MBEDTLS_RIPEMD160_ALT

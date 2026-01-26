@@ -67,19 +67,22 @@ pub unsafe fn hook_exp_mod(exp_mod: Option<&'static (dyn MbedtlsMpiExpMod + Send
 }
 
 #[cfg(not(feature = "nohook-exp-mod"))]
-mod alt {
+pub(crate) mod alt {
     use core::cell::Cell;
     use core::ffi::c_int;
 
     use critical_section::Mutex;
 
-    use crate::{mbedtls_mpi, mbedtls_mpi_exp_mod_soft, merr, MbedtlsError};
+    use crate::{
+        mbedtls_mpi, mbedtls_mpi_bitlen, mbedtls_mpi_copy, mbedtls_mpi_free, mbedtls_mpi_get_bit,
+        mbedtls_mpi_init, mbedtls_mpi_lset, mbedtls_mpi_mod_mpi, mbedtls_mpi_mul_mpi, MbedtlsError,
+    };
 
     use super::MbedtlsMpiExpMod;
 
     pub(crate) static EXP_MOD: Mutex<Cell<Option<&(dyn MbedtlsMpiExpMod + Send + Sync)>>> =
         Mutex::new(Cell::new(None));
-    static EXP_MOD_FALLBACK: FallbackMpiExpMod = FallbackMpiExpMod::new();
+    pub(crate) static EXP_MOD_FALLBACK: FallbackMpiExpMod = FallbackMpiExpMod::new();
 
     pub struct FallbackMpiExpMod(());
 
@@ -102,19 +105,64 @@ mod alt {
             x: &mbedtls_mpi,
             y: &mbedtls_mpi,
             m: &mbedtls_mpi,
-            prec_rr: Option<&mut mbedtls_mpi>,
+            _prec_rr: Option<&mut mbedtls_mpi>,
         ) -> Result<(), MbedtlsError> {
-            merr!(unsafe {
-                mbedtls_mpi_exp_mod_soft(
-                    z,
-                    x,
-                    y,
-                    m,
-                    prec_rr.map(|rr| rr as *mut _).unwrap_or_default(),
-                )
-            })?;
+            // Software fallback using square-and-multiply algorithm
+            // This replaces the mbedtls_mpi_exp_mod_soft() call which no longer exists in mbedtls 3.6.5
+            unsafe {
+                // Initialize result to 1: z = 1
+                let mut result = mbedtls_mpi_lset(z, 1);
+                if result != 0 {
+                    return Err(MbedtlsError::new(result));
+                }
 
-            Ok(())
+                // Create a copy of the base
+                let mut base: mbedtls_mpi = core::mem::zeroed();
+                mbedtls_mpi_init(&mut base);
+                result = mbedtls_mpi_copy(&mut base, x);
+                if result != 0 {
+                    mbedtls_mpi_free(&mut base);
+                    return Err(MbedtlsError::new(result));
+                }
+
+                // Get bit length of exponent
+                let bits = mbedtls_mpi_bitlen(y);
+
+                // Square-and-multiply algorithm
+                // For each bit in the exponent (from MSB to LSB):
+                //   - Square the current result
+                //   - If the bit is set, multiply by the base
+                for i in (0..bits).rev() {
+                    // Square: z = z * z mod m
+                    result = mbedtls_mpi_mul_mpi(z, z, z);
+                    if result != 0 {
+                        mbedtls_mpi_free(&mut base);
+                        return Err(MbedtlsError::new(result));
+                    }
+                    result = mbedtls_mpi_mod_mpi(z, z, m);
+                    if result != 0 {
+                        mbedtls_mpi_free(&mut base);
+                        return Err(MbedtlsError::new(result));
+                    }
+
+                    // If bit is set: z = z * base mod m
+                    if mbedtls_mpi_get_bit(y, i) == 1 {
+                        result = mbedtls_mpi_mul_mpi(z, z, &base);
+                        if result != 0 {
+                            mbedtls_mpi_free(&mut base);
+                            return Err(MbedtlsError::new(result));
+                        }
+                        result = mbedtls_mpi_mod_mpi(z, z, m);
+                        if result != 0 {
+                            mbedtls_mpi_free(&mut base);
+                            return Err(MbedtlsError::new(result));
+                        }
+                    }
+                }
+
+                mbedtls_mpi_free(&mut base);
+                Ok(())
+            }
         }
     }
 

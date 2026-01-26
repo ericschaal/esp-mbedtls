@@ -13,14 +13,14 @@ use crypto_bigint::{U1024, U2048, U512};
 use crypto_bigint::{U256, U384};
 
 use crate::{
-    mbedtls_mpi, mbedtls_mpi_add_mpi, mbedtls_mpi_cmp_int, mbedtls_mpi_exp_mod_soft,
+    mbedtls_mpi, mbedtls_mpi_add_mpi, mbedtls_mpi_cmp_int,
     mbedtls_mpi_free, mbedtls_mpi_grow, mbedtls_mpi_init, mbedtls_mpi_lset, mbedtls_mpi_mod_mpi,
     mbedtls_mpi_set_bit, merr, MbedtlsError,
 };
 
 use esp_hal::rsa::{operand_sizes, RsaContext};
 
-use crate::hook::exp_mod::MbedtlsMpiExpMod;
+use crate::hook::exp_mod::{alt::EXP_MOD_FALLBACK, MbedtlsMpiExpMod};
 
 #[cfg(not(feature = "accel-esp32"))]
 const SOC_RSA_MIN_BIT_LEN: usize = 256;
@@ -157,17 +157,8 @@ impl MbedtlsMpiExpMod for EspExpMod {
         let num_words = Self::calculate_hw_words(m_words.max(x_words.max(y_words)));
 
         if num_words * 32 < SOC_RSA_MIN_BIT_LEN || num_words * 32 > SOC_RSA_MAX_BIT_LEN {
-            unwrap!(merr!(unsafe {
-                mbedtls_mpi_exp_mod_soft(
-                    z,
-                    x,
-                    y,
-                    m,
-                    prec_rr.as_mut().map(|rr| *rr as *mut _).unwrap_or_default(),
-                )
-            }));
-
-            return Ok(());
+            // Size out of hardware range - use software fallback
+            return EXP_MOD_FALLBACK.exp_mod(z, x, y, m, prec_rr);
         }
 
         if m.private_p.is_null() {
@@ -333,8 +324,8 @@ fn compute_mprime(m: &mbedtls_mpi) -> u32 {
 #[inline(always)]
 fn mpi_words(x: &mbedtls_mpi) -> usize {
     for index in (0..x.private_n).rev() {
-        if unsafe { x.private_p.add(index).read() } != 0 {
-            return index + 1;
+        if unsafe { x.private_p.add(index.into()).read() } != 0 {
+            return (index + 1) as usize;
         }
     }
 
