@@ -16,6 +16,8 @@ mod extra_impls; // TODO: Figure out if we still need this
 #[cfg(not(target_os = "espidf"))]
 pub mod accel;
 #[cfg(not(target_os = "espidf"))]
+pub mod time;
+#[cfg(not(target_os = "espidf"))]
 pub mod hook;
 pub mod self_test;
 

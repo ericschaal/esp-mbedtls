@@ -30,6 +30,7 @@ use esp_radio::wifi::WifiDevice;
 use esp_radio::wifi::WifiEvent;
 
 use log::info;
+use esp_mbedtls::sys::time::esp::EspTimeGuard;
 
 extern crate alloc;
 
@@ -55,7 +56,7 @@ const WIFI_PASS: &str = env!("WIFI_PASS");
 pub async fn bootstrap_stack<const SOCKETS: usize>(
     spawner: Spawner,
     stack_resources: &'static mut StackResources<SOCKETS>,
-) -> (Tls<'static>, Stack<'static>, EspAccel<'static>) {
+) -> (Tls<'static>, Stack<'static>, EspAccel<'static>, EspTimeGuard) {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
     info!("Starting...");
@@ -71,6 +72,11 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
         esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT)
             .software_interrupt0,
     );
+
+    let rtc: &esp_hal::rtc_cntl::Rtc = mk_static!(esp_hal::rtc_cntl::Rtc, esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR));
+    rtc.set_current_time_us(1770307449462000);
+
+    let time = esp_mbedtls::sys::time::esp::register(rtc);
 
     #[cfg(not(any(feature = "esp32", feature = "esp32c2")))]
     let accel = EspAccel::new(peripherals.SHA, peripherals.RSA);
@@ -100,7 +106,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 
     wait_ip(stack).await;
 
-    (Tls::new(trng).unwrap(), stack, accel)
+    (Tls::new(trng).unwrap(), stack, accel, time)
 }
 
 async fn wait_ip(stack: Stack<'_>) {

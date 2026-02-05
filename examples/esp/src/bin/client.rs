@@ -36,9 +36,9 @@ async fn main(spawner: Spawner) {
 
     let stack_resources = mk_static!(StackResources<3>, StackResources::new());
 
-    let (mut tls, stack, mut accel) = bootstrap::bootstrap_stack(spawner, stack_resources).await;
+    let (mut tls, stack, mut accel, _time) = bootstrap::bootstrap_stack(spawner, stack_resources).await;
 
-    tls.set_debug(1);
+    tls.set_debug(3);
 
     let _accel_queue = accel.start();
 
