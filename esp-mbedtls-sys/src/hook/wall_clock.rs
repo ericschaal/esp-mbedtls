@@ -9,7 +9,6 @@ pub trait MbedtlsWallClock {
     fn instant(&self) -> tm;
 }
 
-
 /// Hook the wall clock function
 ///
 /// # Safety
@@ -34,16 +33,15 @@ pub unsafe fn hook_wall_clock(wc: Option<&'static (dyn MbedtlsWallClock + Send +
 
 #[cfg(not(feature = "nohook-wall-clock"))]
 mod alt {
+    use crate::bindings::tm;
     use core::cell::Cell;
     use core::ptr;
     use critical_section::Mutex;
-    use crate::bindings::tm;
 
     use super::MbedtlsWallClock;
 
     pub(crate) static WALL_CLOCK: Mutex<Cell<Option<&(dyn MbedtlsWallClock + Send + Sync)>>> =
         Mutex::new(Cell::new(None));
-
 
     /// Get current wall clock time as broken-down time in UTC.
     ///

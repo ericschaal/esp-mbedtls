@@ -1,6 +1,8 @@
 #ifndef __TIME_H__
 #define __TIME_H__
 
+#include <stdint.h>
+
 typedef int64_t time_t;
 
 struct tm {

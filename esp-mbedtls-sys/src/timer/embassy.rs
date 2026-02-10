@@ -1,29 +1,29 @@
-
 use crate::hook::timer::MbedtlsTimer;
-pub static TIMER: EmbassyTimerBackend = EmbassyTimerBackend;
 
-pub struct EmbassyTimerBackend;
-impl MbedtlsTimer for EmbassyTimerBackend {
-    fn now(&self) -> u64 {
-        embassy_time::Instant::now().as_millis()
-    }
-}
-
+/// Embassy-based timer backend for MbedTLS timeout operations.
+///
+/// Uses `embassy_time::Instant` to provide monotonic millisecond timing.
+///
+/// # Usage
+/// ```no_run
+/// use esp_mbedtls_sys::timer::{hook_timer, embassy::EmbassyTimer};
+///
+/// // Create a static timer instance (using static_cell or similar)
+/// static TIMER: EmbassyTimer = EmbassyTimer;
+///
+/// unsafe {
+///     hook_timer(Some(&TIMER));
+/// }
+/// // ... use MbedTLS ...
+/// unsafe {
+///     hook_timer(None);
+/// }
+/// ```
+#[derive(Debug, Default)]
 pub struct EmbassyTimer;
 
-impl EmbassyTimer {
-    pub fn new() -> Self {
-        unsafe  {
-            crate::hook::timer::hook_timer(Some(&TIMER));
-        }
-        Self
-    }
-}
-
-impl Drop for EmbassyTimer {
-    fn drop(&mut self) {
-        unsafe {
-            crate::hook::timer::hook_timer(None);
-        }
+impl MbedtlsTimer for EmbassyTimer {
+    fn now(&self) -> u64 {
+        embassy_time::Instant::now().as_millis()
     }
 }

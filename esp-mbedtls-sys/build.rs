@@ -41,10 +41,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let dirs = if pregen_bindings
-        && pregen_bindings_rs_file.exists()
-        && removed_hooks.is_empty()
-    {
+    let dirs = if pregen_bindings && pregen_bindings_rs_file.exists() && removed_hooks.is_empty() {
         // Use the pre-generated bindings
         Some((pregen_bindings_rs_file, pregen_libs_dir))
     } else if target.ends_with("-espidf") {

@@ -16,9 +16,9 @@ use esp_hal::rng::Trng;
 use esp_hal::rng::TrngSource;
 use esp_hal::timer::timg::TimerGroup;
 
-use esp_mbedtls::sys::timer::embassy::EmbassyTimer;
-use esp_mbedtls::sys::clock::esp::EspRtcWallClock;
 use esp_mbedtls::sys::accel::esp::EspAccel;
+use esp_mbedtls::sys::clock::esp::EspRtcWallClock;
+use esp_mbedtls::sys::timer::embassy::EmbassyTimer;
 use esp_mbedtls::Tls;
 
 use esp_metadata_generated::memory_range;
@@ -58,7 +58,7 @@ const CURRENT_TIME_MS: &str = env!("CURRENT_TIME_MS");
 pub async fn bootstrap_stack<const SOCKETS: usize>(
     spawner: Spawner,
     stack_resources: &'static mut StackResources<SOCKETS>,
-) -> (Tls<'static>, Stack<'static>, EspAccel<'static>, EmbassyTimer, EspRtcWallClock) {
+) -> (Tls<'static>, Stack<'static>, EspAccel<'static>) {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
     info!("Starting...");
@@ -75,22 +75,34 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
             .software_interrupt0,
     );
 
-    let rtc = mk_static!(
-        esp_hal::rtc_cntl::Rtc,
-        esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR)
-    );
-    rtc.set_current_time_us(
-        CURRENT_TIME_MS
-            .parse::<u64>()
-            .expect("Failed to parse CURRENT_TIME_MS")
-            * 1000, // Convert milliseconds to microseconds
-    );
+    // TODO feature gate?
+    {
+        let timer = mk_static!(EmbassyTimer, EmbassyTimer::default());
+        unsafe {
+            esp_mbedtls::sys::hook::timer::hook_timer(Some(timer));
+        }
+    }
 
-    // Hook the timer (using embassy-time for monotonic timeouts)
-    let timer = EmbassyTimer::new();
+    // TODO feature gate?
+    {
+        let rtc = mk_static!(
+            esp_hal::rtc_cntl::Rtc,
+            esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR)
+        );
 
-    // Hook the wall clock (using ESP RTC for calendar time)
-    let clock = EspRtcWallClock::new(rtc);
+        // In a real-life scenario NTP or equivalent should be used here to initialize the RTC
+        rtc.set_current_time_us(
+            CURRENT_TIME_MS
+                .parse::<u64>()
+                .expect("Failed to parse CURRENT_TIME_MS")
+                * 1000, // Convert milliseconds to microseconds
+        );
+
+        let clock = mk_static!(EspRtcWallClock, EspRtcWallClock::new(rtc));
+        unsafe {
+            esp_mbedtls::sys::hook::wall_clock::hook_wall_clock(Some(clock));
+        }
+    }
 
     #[cfg(not(any(feature = "esp32", feature = "esp32c2")))]
     let accel = EspAccel::new(peripherals.SHA, peripherals.RSA);
@@ -120,7 +132,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 
     wait_ip(stack).await;
 
-    (Tls::new(trng).unwrap(), stack, accel, timer, clock)
+    (Tls::new(trng).unwrap(), stack, accel)
 }
 
 async fn wait_ip(stack: Stack<'_>) {

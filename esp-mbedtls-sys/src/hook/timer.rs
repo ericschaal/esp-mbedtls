@@ -39,13 +39,12 @@ mod alt {
     pub(crate) static TIMER: Mutex<Cell<Option<&(dyn MbedtlsTimer + Send + Sync)>>> =
         Mutex::new(Cell::new(None));
 
-
     /// Get current time in milliseconds since epoch.
     ///
     /// This function is called by MbedTLS for time-based operations.
     #[no_mangle]
     pub unsafe extern "C" fn mbedtls_ms_time() -> i64 {
-        if let Some(timer) = critical_section::with(|cs|TIMER.borrow(cs).get()) {
+        if let Some(timer) = critical_section::with(|cs| TIMER.borrow(cs).get()) {
             timer.now() as i64
         } else {
             0
@@ -58,7 +57,7 @@ mod alt {
     /// If `timer` is not null, the time is also stored in `*timer`.
     #[no_mangle]
     pub unsafe extern "C" fn time(timer: *mut i64) -> i64 {
-        let time = if let Some(timer) = critical_section::with(|cs|TIMER.borrow(cs).get()) {
+        let time = if let Some(timer) = critical_section::with(|cs| TIMER.borrow(cs).get()) {
             timer.now() / 1000
         } else {
             0
