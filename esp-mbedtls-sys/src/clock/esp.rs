@@ -26,8 +26,6 @@ use crate::hook::wall_clock::MbedtlsWallClock;
 /// }
 /// ```
 ///
-/// # Note
-/// The RTC time is lost on power cycle and must be reset after boot.
 pub struct EspRtcWallClock {
     rtc: Mutex<Cell<&'static esp_hal::rtc_cntl::Rtc<'static>>>,
 }

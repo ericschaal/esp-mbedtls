@@ -4,6 +4,11 @@ pub trait MbedtlsWallClock {
     ///
     /// Returns the current calendar time in UTC as a `tm` structure.
     ///
+    /// # Note
+    /// This function should return the current wall clock time. The wall clock implementation is
+    /// decoupled from the timer implementation (which provides monotonic timing for timeouts).
+    /// MbedTLS uses this for X.509 certificate time validation.
+    ///
     /// # Returns
     /// - `tm` - Current time as a broken-down time structure
     fn instant(&self) -> tm;
@@ -45,15 +50,24 @@ mod alt {
 
     /// Get current wall clock time as broken-down time in UTC.
     ///
-    /// This function returns the current wall clock time as a broken-down time structure.
-    /// The timestamp parameter is ignored for compatibility with the MbedTLS platform API.
+    /// MbedTLS calls this function from X.509 certificate validation code
+    /// (`x509_get_current_time` and `x509_crt_verify_chain`) to get the current
+    /// calendar time. Although the standard `gmtime_r` signature takes a timestamp
+    /// to convert, MbedTLS always calls this with a freshly retrieved value from
+    /// `mbedtls_time(NULL)`.
+    ///
+    /// This implementation ignores the timestamp parameter and returns the current
+    /// wall clock time directly. This decouples the wall clock (calendar time) from
+    /// the timer (monotonic timing used for timeouts), allowing separate implementations
+    /// for each concern.
     ///
     /// # Parameters
-    /// - `_tt`: Ignored (exists for MbedTLS platform API compatibility)
+    /// - `_tt`: Ignored. MbedTLS passes `mbedtls_time(NULL)` here, but we return
+    ///   current wall clock time regardless of this value.
     /// - `tm_buf`: Pointer to buffer where the result will be written
     ///
     /// # Returns
-    /// a pointer to `tm_buf` on success, or null if:
+    /// Pointer to `tm_buf` on success, or null if:
     /// - `tm_buf` is null
     /// - No wall clock implementation is hooked
     #[no_mangle]
