@@ -1,7 +1,6 @@
 //! An `esp-hal` bootstrapping code shared by all network examples
 
 use embassy_executor::Spawner;
-use esp_mbedtls::sys::time::TimeGuard;
 
 use embassy_net::{Runner, Stack, StackResources};
 
@@ -17,6 +16,8 @@ use esp_hal::rng::Trng;
 use esp_hal::rng::TrngSource;
 use esp_hal::timer::timg::TimerGroup;
 
+use esp_mbedtls::sys::timer::embassy::EmbassyTimer;
+use esp_mbedtls::sys::clock::esp::EspRtcWallClock;
 use esp_mbedtls::sys::accel::esp::EspAccel;
 use esp_mbedtls::Tls;
 
@@ -57,7 +58,7 @@ const CURRENT_TIME_MS: &str = env!("CURRENT_TIME_MS");
 pub async fn bootstrap_stack<const SOCKETS: usize>(
     spawner: Spawner,
     stack_resources: &'static mut StackResources<SOCKETS>,
-) -> (Tls<'static>, Stack<'static>, EspAccel<'static>, TimeGuard) {
+) -> (Tls<'static>, Stack<'static>, EspAccel<'static>, EmbassyTimer, EspRtcWallClock) {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
     info!("Starting...");
@@ -74,7 +75,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
             .software_interrupt0,
     );
 
-    let rtc: &esp_hal::rtc_cntl::Rtc = mk_static!(
+    let rtc = mk_static!(
         esp_hal::rtc_cntl::Rtc,
         esp_hal::rtc_cntl::Rtc::new(peripherals.LPWR)
     );
@@ -85,7 +86,11 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
             * 1000, // Convert milliseconds to microseconds
     );
 
-    let time = esp_mbedtls::sys::time::register(rtc);
+    // Hook the timer (using embassy-time for monotonic timeouts)
+    let timer = EmbassyTimer::new();
+
+    // Hook the wall clock (using ESP RTC for calendar time)
+    let clock = EspRtcWallClock::new(rtc);
 
     #[cfg(not(any(feature = "esp32", feature = "esp32c2")))]
     let accel = EspAccel::new(peripherals.SHA, peripherals.RSA);
@@ -115,7 +120,7 @@ pub async fn bootstrap_stack<const SOCKETS: usize>(
 
     wait_ip(stack).await;
 
-    (Tls::new(trng).unwrap(), stack, accel, time)
+    (Tls::new(trng).unwrap(), stack, accel, timer, clock)
 }
 
 async fn wait_ip(stack: Stack<'_>) {

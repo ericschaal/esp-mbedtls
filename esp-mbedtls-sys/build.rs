@@ -41,12 +41,9 @@ fn main() -> Result<()> {
         }
     }
 
-    let time_enabled = env::var("CARGO_FEATURE_TIME").is_ok();
-
     let dirs = if pregen_bindings
         && pregen_bindings_rs_file.exists()
         && removed_hooks.is_empty()
-        && !time_enabled
     {
         // Use the pre-generated bindings
         Some((pregen_bindings_rs_file, pregen_libs_dir))
@@ -59,8 +56,6 @@ fn main() -> Result<()> {
                 println!("cargo::warning=Forcing on-the-fly build for target {target}");
             } else if !removed_hooks.is_empty() {
                 println!("cargo::warning=Forcing on-the-fly build for {target} because some hooks are disabled: {removed_hooks:?}");
-            } else if time_enabled {
-                println!("cargo::warning=Forcing on-the-fly build for {target} because time support is enabled");
             }
         }
 
@@ -72,7 +67,6 @@ fn main() -> Result<()> {
 
         let builder = builder::MbedtlsBuilder::new(
             removed_hooks.complement(),
-            time_enabled,
             !use_gcc,
             crate_root_path.clone(),
             Some(target),

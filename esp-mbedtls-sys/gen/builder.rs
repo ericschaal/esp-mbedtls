@@ -17,12 +17,15 @@ pub enum Hook {
     Sha512,
     /// MPI modular exponentiation
     ExpMod,
+    /// Timer support
+    Timer,
+    /// Wall clock support
+    WallClock,
 }
 
 /// The MbedTLS builder
 pub struct MbedtlsBuilder {
     hooks: EnumSet<Hook>,
-    time_support: bool,
     crate_root_path: PathBuf,
     cmake_configurer: CMakeConfigurer,
     clang_path: Option<PathBuf>,
@@ -35,7 +38,6 @@ impl MbedtlsBuilder {
     ///
     /// Arguments:
     /// - `hooks` - Set of algorithm hooks to enable
-    /// - `time_support`: If true, enable time support in MbedTLS
     /// - `force_clang`: If true, force the use of Clang as the C/C++ compiler
     /// - `crate_root_path`: Path to the root of the crate
     /// - `cmake_rust_target`: Optional target for CMake when building MbedTLS, with Rust target-triple syntax. If not specified, the "TARGET" env variable will be used
@@ -50,7 +52,6 @@ impl MbedtlsBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         hooks: EnumSet<Hook>,
-        time_support: bool,
         force_clang: bool,
         crate_root_path: PathBuf,
         cmake_rust_target: Option<String>,
@@ -62,7 +63,6 @@ impl MbedtlsBuilder {
     ) -> Self {
         Self {
             hooks,
-            time_support,
             cmake_configurer: CMakeConfigurer::new(
                 force_clang,
                 clang_sysroot_path.clone(),
@@ -163,17 +163,16 @@ impl MbedtlsBuilder {
         }
 
         for hook in self.hooks {
-            let def = self.hook_def(hook);
+            let defs = self.hook_defs(hook);
 
-            builder = builder.clang_arg(format!("-D{def}"));
+            for def in defs {
+                builder = builder.clang_arg(format!("-D{def}"));
 
-            if let Some(size_def) = self.hook_work_area_size_def(hook) {
-                builder = builder.clang_arg(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                if let Some(size_def) = self.hook_work_area_size_def(hook) {
+                    builder = builder.clang_arg(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                }
             }
-        }
 
-        for &def in self.time_defs() {
-            builder = builder.clang_arg(format!("-D{def}"));
         }
 
         let bindings = builder
@@ -245,19 +244,17 @@ impl MbedtlsBuilder {
             .out_dir(&target_dir);
 
         for hook in self.hooks {
-            let def = self.hook_def(hook);
+            let defs = self.hook_defs(hook);
 
-            config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
+            for def in defs {
+                config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
 
-            if let Some(size_def) = self.hook_work_area_size_def(hook) {
-                config
-                    .cflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"))
-                    .cxxflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                if let Some(size_def) = self.hook_work_area_size_def(hook) {
+                    config
+                        .cflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"))
+                        .cxxflag(format!("-D{def}_WORK_AREA_SIZE={size_def}"));
+                }
             }
-        }
-
-        for &def in self.time_defs() {
-            config.cflag(format!("-D{def}")).cxxflag(format!("-D{def}"));
         }
 
         config.build();
@@ -271,12 +268,14 @@ impl MbedtlsBuilder {
         println!("cargo:rerun-if-changed={}", file_or_dir.display())
     }
 
-    fn hook_def(&self, hook: Hook) -> &'static str {
+    fn hook_defs(&self, hook: Hook) -> &'static [&'static str] {
         match hook {
-            Hook::Sha1 => "MBEDTLS_SHA1_ALT",
-            Hook::Sha256 => "MBEDTLS_SHA256_ALT",
-            Hook::Sha512 => "MBEDTLS_SHA512_ALT",
-            Hook::ExpMod => "MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK",
+            Hook::Sha1 => &["MBEDTLS_SHA1_ALT"],
+            Hook::Sha256 => &["MBEDTLS_SHA256_ALT"],
+            Hook::Sha512 => &["MBEDTLS_SHA512_ALT"],
+            Hook::ExpMod => &["MBEDTLS_MPI_EXP_MOD_ALT_FALLBACK"],
+            Hook::Timer => &["MBEDTLS_HAVE_TIME", "MBEDTLS_PLATFORM_TIME_ALT", "MBEDTLS_PLATFORM_MS_TIME_ALT"],
+            Hook::WallClock => &["MBEDTLS_HAVE_TIME_DATE", "MBEDTLS_PLATFORM_GMTIME_R_ALT"],
         }
     }
 
@@ -286,24 +285,6 @@ impl MbedtlsBuilder {
             Hook::Sha256 => Some(208),
             Hook::Sha512 => Some(304),
             _ => None,
-        }
-    }
-
-    /// Get MbedTLS configuration defines for platform time support.
-    ///
-    /// These defines enable MbedTLS to use our platform-specific time implementation
-    /// provided in src/time/ instead of standard C library time functions.
-    fn time_defs(&self) -> &'static [&'static str] {
-        if self.time_support {
-            &[
-                "MBEDTLS_HAVE_TIME",
-                "MBEDTLS_HAVE_TIME_DATE",
-                "MBEDTLS_PLATFORM_GMTIME_R_ALT",
-                "MBEDTLS_PLATFORM_TIME_ALT",
-                "MBEDTLS_PLATFORM_MS_TIME_ALT",
-            ]
-        } else {
-            &[]
         }
     }
 
